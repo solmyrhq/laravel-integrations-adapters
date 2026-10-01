@@ -17,7 +17,7 @@
         "php-http/guzzle7-adapter": "^1.0",
         "pocketarc/laravel-integrations": "^6.0",
         "spatie/laravel-data": "^4.0",
-        "stripe/stripe-php": "^20.0",
+        "stripe/stripe-php": "^20.0 || ^21.0 || ^22.0",
         "thecodingmachine/safe": "^3.3",
         "wildbit/postmark-php": "^7.0",
         "zendesk/zendesk_api_client_php": "^4.1"
