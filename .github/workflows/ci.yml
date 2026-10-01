@@ -60,11 +60,16 @@ jobs:
       - run: vendor/bin/phpstan analyse --memory-limit=1G
 
   test:
-    name: PHPUnit (PHP ${{ matrix.php-version }})
+    name: PHPUnit (PHP ${{ matrix.php-version }}, ${{ matrix.dependencies }} dependencies)
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         php-version: ['8.3', '8.4', '8.5']
+        dependencies: ['highest']
+        include:
+          - php-version: '8.3'
+            dependencies: 'lowest'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -82,5 +87,8 @@ jobs:
           path: ${{ steps.composer-cache-dir.outputs.cache-dir }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
-      - run: composer install --no-interaction --prefer-dist
+      - if: matrix.dependencies == 'highest'
+        run: composer install --no-interaction --prefer-dist
+      - if: matrix.dependencies == 'lowest'
+        run: composer update --prefer-lowest --prefer-stable --no-interaction --prefer-dist
       - run: vendor/bin/phpunit
