@@ -223,6 +223,23 @@ class StripeProviderTest extends TestCase
         $this->assertFalse((new StripeProvider)->verifyWebhookSignature($integration, $request));
     }
 
+    public function test_webhook_signature_rejects_when_webhook_secret_is_empty(): void
+    {
+        $integration = $this->createIntegration(
+            providerKey: 'stripe',
+            providerClass: StripeProvider::class,
+            credentials: [
+                'api_key' => 'sk_test_abc',
+                'webhook_secret' => '',
+            ],
+        );
+
+        $payload = (string) json_encode(['id' => 'evt_123', 'type' => 'payment_intent.succeeded']);
+        $request = $this->signedWebhookRequest($payload, '', time());
+
+        $this->assertFalse((new StripeProvider)->verifyWebhookSignature($integration, $request));
+    }
+
     public function test_webhook_signature_verifies_a_correctly_signed_payload(): void
     {
         $secret = 'whsec_test_secret';
