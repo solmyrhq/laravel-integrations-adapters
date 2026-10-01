@@ -23,6 +23,7 @@ use Stripe\Exception\ApiConnectionException;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Webhook;
+use Stripe\WebhookSignature;
 use Throwable;
 
 use function Safe\json_decode;
@@ -130,16 +131,23 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
             return false;
         }
 
+        // stripe-php before 21.3.2 does not reject an empty secret, and
+        // composer.json still allows those versions.
+        if ($credentials->webhook_secret === '') {
+            return false;
+        }
+
         $signature = $request->header('Stripe-Signature');
         if (! is_string($signature) || $signature === '') {
             return false;
         }
 
         try {
-            Webhook::constructEvent(
+            WebhookSignature::verifyHeader(
                 $request->getContent(),
                 $signature,
                 $credentials->webhook_secret,
+                Webhook::DEFAULT_TOLERANCE,
             );
 
             return true;
