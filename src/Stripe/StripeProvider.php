@@ -23,6 +23,7 @@ use Stripe\Exception\ApiConnectionException;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Webhook;
+use Stripe\WebhookSignature;
 use Throwable;
 
 use function Safe\json_decode;
@@ -136,10 +137,11 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
         }
 
         try {
-            Webhook::constructEvent(
+            WebhookSignature::verifyHeader(
                 $request->getContent(),
                 $signature,
                 $credentials->webhook_secret,
+                Webhook::DEFAULT_TOLERANCE,
             );
 
             return true;
