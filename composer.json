@@ -24,7 +24,7 @@
     },
     "require-dev": {
         "captainhook/captainhook": "^5.28",
-        "ergebnis/phpstan-rules": "^2.6",
+        "ergebnis/phpstan-rules": "^2.13",
         "korbeil/phpstan-generic-rules": "^2.0",
         "larastan/larastan": "^3",
         "laravel/pint": "^1.24",
