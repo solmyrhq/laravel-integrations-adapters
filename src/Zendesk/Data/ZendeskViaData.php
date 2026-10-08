@@ -17,6 +17,18 @@ class ZendeskViaData extends Data
     ) {}
 
     /**
+     * Accepts an empty `source`, which the inferred `required` rule rejects.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function rules(): array
+    {
+        return [
+            'source' => ['array'],
+        ];
+    }
+
+    /**
      * @param  array<mixed>  $properties
      * @return array<mixed>
      */

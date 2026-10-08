@@ -72,22 +72,32 @@ class ZendeskUsers extends ZendeskResource
             $this->integration
                 ->at('users.json')
                 ->get(function () use ($callback, &$users): void {
-                    $iterator = $this->sdk()->users()->iterator();
-
-                    foreach ($iterator as $user) {
-                        if (! $user instanceof stdClass) {
-                            continue;
-                        }
-                        $data = ZendeskUserData::from($user);
-                        if ($callback !== null) {
-                            $callback($data);
-                        }
-
-                        $users->push($data);
-                    }
+                    $this->collectUsers($this->sdk()->users()->iterator(), $users, $callback);
                 });
         });
 
         return $users;
+    }
+
+    /**
+     * @param  iterable<mixed>  $iterator
+     * @param  Collection<int, ZendeskUserData>  $users
+     * @param  (callable(ZendeskUserData): void)|null  $callback
+     *
+     * @param-immediately-invoked-callable $callback
+     */
+    private function collectUsers(iterable $iterator, Collection $users, ?callable $callback): void
+    {
+        foreach ($iterator as $user) {
+            if (! $user instanceof stdClass) {
+                continue;
+            }
+            $data = ZendeskUserData::from($user);
+            if ($callback !== null) {
+                $callback($data);
+            }
+
+            $users->push($data);
+        }
     }
 }

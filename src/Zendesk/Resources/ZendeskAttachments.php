@@ -40,11 +40,7 @@ class ZendeskAttachments extends ZendeskResource
             $params = ['page[size]' => 100];
 
             do {
-                $response = $this->integration
-                    ->at("tickets/{$ticketId}/comments.json")
-                    ->as(ZendeskCommentPageResponse::class)
-                    ->withData($params)
-                    ->get(fn () => $this->sdk()->tickets($ticketId)->comments()->findAll($params));
+                $response = $this->fetchCommentPage($ticketId, $params);
 
                 $url = $this->findAttachmentContentUrl($response->comments, $attachmentId);
                 if ($url !== null) {
@@ -52,13 +48,23 @@ class ZendeskAttachments extends ZendeskResource
                 }
 
                 $cursor = $response->meta->has_more ? $response->meta->after_cursor : null;
-                if ($cursor !== null) {
-                    $params['page[after]'] = $cursor;
-                }
+                $params['page[after]'] = $cursor;
             } while ($cursor !== null);
 
             return null;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     */
+    private function fetchCommentPage(int $ticketId, array $params): ZendeskCommentPageResponse
+    {
+        return $this->integration
+            ->at("tickets/{$ticketId}/comments.json")
+            ->as(ZendeskCommentPageResponse::class)
+            ->withData($params)
+            ->get(fn () => $this->sdk()->tickets($ticketId)->comments()->findAll($params));
     }
 
     /**
