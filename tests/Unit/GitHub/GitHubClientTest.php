@@ -191,6 +191,43 @@ class GitHubClientTest extends TestCase
         $this->assertSame(201, $comments[101]['id']);
     }
 
+    public function test_get_repository_comments_since_paginates_and_calls_callback(): void
+    {
+        $mockHttp = new MockHttpClient;
+        $mockHttp->addResponse($this->jsonResponse($this->generateComments(100)));
+        $mockHttp->addResponse($this->jsonResponse($this->generateComments(2, 200)));
+
+        $client = $this->createClient($mockHttp);
+        $comments = [];
+        $client->comments()->since(new \DateTimeImmutable('2026-06-01T11:00:00+00:00'), function (array $comment) use (&$comments): void {
+            $comments[] = $comment;
+        });
+
+        $this->assertCount(102, $comments);
+        $this->assertSame(100, $comments[0]['id']);
+        $this->assertSame(201, $comments[101]['id']);
+
+        $requests = $mockHttp->getRequests();
+        $this->assertCount(2, $requests);
+        $this->assertSame('/repos/acme/widgets/issues/comments', $requests[0]->getUri()->getPath());
+        $this->assertStringContainsString('since=2026-06-01T11%3A00%3A00%2B00%3A00', $requests[0]->getUri()->getQuery());
+        $this->assertStringContainsString('page=2', $requests[1]->getUri()->getQuery());
+        $this->assertSame('application/vnd.github.full+json', $requests[0]->getHeaderLine('Accept'));
+    }
+
+    public function test_get_repository_comments_since_rejects_a_response_that_is_not_a_list(): void
+    {
+        $mockHttp = new MockHttpClient;
+        $mockHttp->addResponse($this->jsonResponse(['message' => 'Not a list']));
+
+        $client = $this->createClient($mockHttp);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Expected a list of comments from GitHub');
+
+        $client->comments()->since(new \DateTimeImmutable('2026-06-01'), function (array $comment): void {});
+    }
+
     public function test_close_issue_returns_issue_data(): void
     {
         $mockHttp = new MockHttpClient;
