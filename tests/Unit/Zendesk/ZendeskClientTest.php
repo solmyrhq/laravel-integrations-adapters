@@ -8,15 +8,16 @@ use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Validation\ValidationException;
 use Integrations\Adapters\Tests\TestCase;
 use Integrations\Adapters\Zendesk\Data\ZendeskCommentData;
 use Integrations\Adapters\Zendesk\Data\ZendeskTicketData;
 use Integrations\Adapters\Zendesk\Data\ZendeskUserData;
 use Integrations\Adapters\Zendesk\ZendeskClient;
 use Integrations\Adapters\Zendesk\ZendeskProvider;
+use Integrations\Exceptions\SchemaDriftException;
 use Integrations\Models\Integration;
 use Integrations\Testing\CreatesIntegration;
-use Spatie\LaravelData\Exceptions\CannotCreateData;
 use Zendesk\API\HttpClient as ZendeskAPI;
 
 class ZendeskClientTest extends TestCase
@@ -365,6 +366,63 @@ class ZendeskClientTest extends TestCase
         $this->assertSame(456, $received[0][1]->id);
     }
 
+    public function test_since_hydrates_incremental_tickets_with_an_empty_subject(): void
+    {
+        $mockHandler = new MockHandler([
+            $this->jsonResponse([
+                'tickets' => [
+                    array_merge($this->fakeTicket(), ['id' => 1001, 'subject' => '', 'raw_subject' => '']),
+                ],
+                'users' => [],
+                'next_page' => null,
+                'end_of_stream' => true,
+                'count' => 1,
+            ]),
+        ]);
+
+        $integration = $this->createIntegrationModel();
+        $sdk = $this->createMockSdk($mockHandler);
+        $client = new ZendeskClient($integration, $sdk);
+
+        /** @var list<ZendeskTicketData> $received */
+        $received = [];
+        $client->tickets()->since(
+            new \DateTimeImmutable('2026-01-01T00:00:00Z'),
+            function (ZendeskTicketData $ticket) use (&$received): void {
+                $received[] = $ticket;
+            },
+        );
+
+        $this->assertCount(1, $received);
+        $this->assertSame('', $received[0]->subject);
+        $this->assertSame('', $received[0]->raw_subject);
+    }
+
+    public function test_since_rejects_an_incremental_ticket_without_a_subject(): void
+    {
+        $ticket = $this->fakeTicket();
+        unset($ticket['subject']);
+
+        $mockHandler = new MockHandler([
+            $this->jsonResponse([
+                'tickets' => [$ticket],
+                'users' => [],
+                'next_page' => null,
+                'end_of_stream' => true,
+                'count' => 1,
+            ]),
+        ]);
+
+        $integration = $this->createIntegrationModel();
+        $sdk = $this->createMockSdk($mockHandler);
+        $client = new ZendeskClient($integration, $sdk);
+
+        $this->expectException(SchemaDriftException::class);
+        $this->expectExceptionMessage('tickets.0.subject');
+
+        $client->tickets()->since(new \DateTimeImmutable('2026-01-01T00:00:00Z'), function (): void {});
+    }
+
     public function test_deferred_validation_throws_on_first_use(): void
     {
         config(['app.debug' => true]);
@@ -378,7 +436,7 @@ class ZendeskClientTest extends TestCase
 
         $client = new ZendeskClient($integration);
 
-        $this->expectException(CannotCreateData::class);
+        $this->expectException(ValidationException::class);
 
         $client->tickets()->get(1);
     }

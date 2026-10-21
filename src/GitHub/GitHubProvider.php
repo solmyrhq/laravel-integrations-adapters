@@ -9,6 +9,7 @@ use Github\Exception\RuntimeException as GitHubRuntimeException;
 use GuzzleHttp\Exception\ConnectException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\GitHub\Data\GitHubIssueData;
 use Integrations\Adapters\GitHub\Data\GitHubUserData;
 use Integrations\Adapters\GitHub\Events\GitHubIssueSynced;
@@ -26,6 +27,8 @@ use Integrations\Models\Integration;
 use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 use InvalidArgumentException;
+
+use function Safe\preg_match;
 
 class GitHubProvider implements ClassifiesFailures, CustomizesRetry, HasHealthCheck, HasIncrementalSync, IdentifiesAuthenticatedUser, IntegrationProvider, RedactsRequestData
 {
@@ -131,7 +134,7 @@ class GitHubProvider implements ClassifiesFailures, CustomizesRetry, HasHealthCh
         // A full re-sync ignores the cursor and enumerates from the epoch.
         // The framework only calls this for non-incremental providers; for
         // GitHub it's a fallback, since the provider is HasIncrementalSync.
-        $this->enumerate($integration, $session, Carbon::createFromTimestamp(0));
+        $this->enumerate($this->makeClient($integration), $integration, $session, Carbon::createFromTimestamp(0));
     }
 
     #[\Override]
@@ -157,25 +160,116 @@ class GitHubProvider implements ClassifiesFailures, CustomizesRetry, HasHealthCh
             $since = $parsed->subHour();
         }
 
-        $this->enumerate($integration, $session, $since);
+        $client = $this->makeClient($integration);
+        $listed = $this->enumerate($client, $integration, $session, $since);
+
+        if ($cursor !== null && $cursor !== '') {
+            $this->recoverIssuesFromComments($client, $integration, $session, $since, $listed);
+        }
     }
 
-    private function enumerate(Integration $integration, SyncSession $session, Carbon $since): void
+    /**
+     * @return array<int, true> the numbers of the dispatched issues, as keys
+     */
+    private function enumerate(GitHubClient $client, Integration $integration, SyncSession $session, Carbon $since): array
     {
-        $client = $this->makeClient($integration);
+        $listed = [];
 
-        $client->issues()->since($since, function (array $issue) use ($integration, $session): void {
-            $issueData = GitHubIssueData::from($issue);
-            $updatedAt = self::parseTimestamp($issue['updated_at'] ?? null);
+        $client->issues()->since($since, function (array $issue) use ($integration, $session, &$listed): void {
+            $number = $this->dispatchIssue($integration, $session, $issue);
 
-            $session->dispatch(
-                new GitHubIssueSynced($integration, $issueData),
-                checkpointValue: $updatedAt?->toIso8601String(),
-                externalId: array_key_exists('number', $issue) && (is_int($issue['number']) || is_string($issue['number']))
-                    ? (string) $issue['number']
-                    : null,
-            );
+            if ($number !== null) {
+                $listed[$number] = true;
+            }
         });
+
+        return $listed;
+    }
+
+    /**
+     * Syncs each issue that has a comment in the `since` window but was missing from the issues list.
+     *
+     * GitHub can take more than an hour to add a recently updated issue to the issues list, by which time its
+     * `updated_at` is before the window and no later run lists it. This relies on the comments feed not having
+     * the same delay.
+     *
+     * @param  array<int, true>  $listed  the numbers of the issues already dispatched from the issues list, as keys
+     */
+    private function recoverIssuesFromComments(
+        GitHubClient $client,
+        Integration $integration,
+        SyncSession $session,
+        Carbon $since,
+        array $listed,
+    ): void {
+        $missing = [];
+
+        $client->comments()->since($since, function (array $comment) use ($listed, &$missing): void {
+            $number = self::issueNumberOfComment($comment);
+
+            if ($number !== null && ! array_key_exists($number, $listed)) {
+                $missing[$number] = true;
+            }
+        });
+
+        foreach (array_keys($missing) as $number) {
+            $issue = $client->issues()->get($number);
+
+            if ($issue === null || array_key_exists('pull_request', $issue)) {
+                continue;
+            }
+
+            Log::warning('GitHubProvider: an issue with comments updated in the `since` window was missing from the issues list, so the provider is syncing it from the comments feed.', [
+                'integration_id' => $integration->id,
+                'issue_number' => $number,
+                'since' => $since->toIso8601String(),
+            ]);
+
+            $this->dispatchIssue($integration, $session, $issue);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     * @return int|null the issue's number, or null when the payload has no numeric `number`
+     */
+    private function dispatchIssue(Integration $integration, SyncSession $session, array $issue): ?int
+    {
+        $issueData = GitHubIssueData::from($issue);
+        $updatedAt = self::parseTimestamp($issue['updated_at'] ?? null);
+        $number = array_key_exists('number', $issue) && (is_int($issue['number']) || is_string($issue['number']))
+            ? (string) $issue['number']
+            : null;
+
+        $session->dispatch(
+            new GitHubIssueSynced($integration, $issueData),
+            checkpointValue: $updatedAt?->toIso8601String(),
+            externalId: $number,
+        );
+
+        return $number !== null && ctype_digit($number) ? (int) $number : null;
+    }
+
+    /**
+     * Returns null for pull request comments, whose `issue_url` also points at `/issues/{number}`.
+     *
+     * @param  array<string, mixed>  $comment
+     */
+    private static function issueNumberOfComment(array $comment): ?int
+    {
+        $htmlUrl = $comment['html_url'] ?? null;
+        if (is_string($htmlUrl) && str_contains($htmlUrl, '/pull/')) {
+            return null;
+        }
+
+        $issueUrl = $comment['issue_url'] ?? null;
+        if (! is_string($issueUrl) || preg_match('#/issues/(\d+)$#', $issueUrl, $matches) === 0) {
+            return null;
+        }
+
+        $digits = $matches[1] ?? null;
+
+        return is_string($digits) ? (int) $digits : null;
     }
 
     /**

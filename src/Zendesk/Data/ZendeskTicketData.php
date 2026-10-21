@@ -66,6 +66,19 @@ class ZendeskTicketData extends Data
     ) {}
 
     /**
+     * Accepts the empty `subject` and `raw_subject` that Zendesk sends for a ticket created from an email with no subject.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function rules(): array
+    {
+        return [
+            'subject' => ['present', 'string'],
+            'raw_subject' => ['present', 'string'],
+        ];
+    }
+
+    /**
      * @param  array<mixed>  $properties
      * @return array<mixed>
      */

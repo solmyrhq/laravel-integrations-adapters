@@ -197,30 +197,35 @@ class ZendeskComments extends ZendeskResource
         }
 
         foreach ($events as $event) {
-            if (! $event instanceof stdClass) {
-                continue;
+            $comment = $this->commentDataFromEvent($event, $audit, $auditId);
+            if ($comment !== null) {
+                return $comment;
             }
-            if (($event->type ?? null) !== 'Comment') {
-                continue;
-            }
-
-            $commentArray = json_decode(json_encode($event), true);
-            if (! is_array($commentArray)) {
-                continue;
-            }
-
-            $commentArray['audit_id'] = $auditId;
-            $commentArray['created_at'] ??= $audit->created_at ?? null;
-            $commentArray['metadata'] ??= is_object($audit->metadata ?? null)
-                ? json_decode(json_encode($audit->metadata), true)
-                : [];
-            $commentArray['via'] ??= is_object($audit->via ?? null)
-                ? json_decode(json_encode($audit->via), true)
-                : ['channel' => 'api', 'source' => []];
-
-            return ZendeskCommentData::from($commentArray);
         }
 
         return null;
+    }
+
+    private function commentDataFromEvent(mixed $event, stdClass $audit, int $auditId): ?ZendeskCommentData
+    {
+        if (! $event instanceof stdClass || ($event->type ?? null) !== 'Comment') {
+            return null;
+        }
+
+        $commentArray = json_decode(json_encode($event), true);
+        if (! is_array($commentArray)) {
+            return null;
+        }
+
+        $commentArray['audit_id'] = $auditId;
+        $commentArray['created_at'] ??= $audit->created_at ?? null;
+        $commentArray['metadata'] ??= is_object($audit->metadata ?? null)
+            ? json_decode(json_encode($audit->metadata), true)
+            : [];
+        $commentArray['via'] ??= is_object($audit->via ?? null)
+            ? json_decode(json_encode($audit->via), true)
+            : ['channel' => 'api', 'source' => []];
+
+        return ZendeskCommentData::from($commentArray);
     }
 }
