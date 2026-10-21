@@ -6,6 +6,7 @@ namespace Integrations\Adapters\Tests\Unit\Stripe;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\Stripe\Events\StripeWebhookReceived;
 use Integrations\Adapters\Stripe\StripeCredentials;
 use Integrations\Adapters\Stripe\StripeMetadata;
@@ -21,6 +22,7 @@ use Integrations\Enums\FailureClass;
 use Integrations\Enums\RateLimitWindow;
 use Integrations\Models\Integration;
 use Integrations\Testing\CreatesIntegration;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Stripe\ApiRequestor;
 use Stripe\Exception\ApiConnectionException;
@@ -186,6 +188,20 @@ class StripeProviderTest extends TestCase
         $this->assertNull((new StripeProvider)->resolveWebhookEvent($request));
     }
 
+    public function test_resolve_webhook_event_returns_null_for_an_empty_type(): void
+    {
+        $request = Request::create('/webhook', 'POST', content: (string) json_encode(['id' => 'evt_123', 'type' => '']));
+
+        $this->assertNull((new StripeProvider)->resolveWebhookEvent($request));
+    }
+
+    public function test_webhook_delivery_id_returns_null_for_an_empty_id(): void
+    {
+        $request = Request::create('/webhook', 'POST', content: (string) json_encode(['id' => '', 'type' => 'x']));
+
+        $this->assertNull((new StripeProvider)->webhookDeliveryId($request));
+    }
+
     public function test_webhook_delivery_id_reads_id_from_payload(): void
     {
         $request = Request::create('/webhook', 'POST', content: (string) json_encode([
@@ -223,6 +239,26 @@ class StripeProviderTest extends TestCase
         $this->assertFalse((new StripeProvider)->verifyWebhookSignature($integration, $request));
     }
 
+    public function test_webhook_signature_rejects_when_webhook_secret_is_empty(): void
+    {
+        $integration = $this->createIntegration(
+            providerKey: 'stripe',
+            providerClass: StripeProvider::class,
+            credentials: [
+                'api_key' => 'sk_test_abc',
+                'webhook_secret' => 'whsec_zzz',
+            ],
+        );
+        // The credential cast rejects an empty secret read from the database,
+        // so the test assigns one to the attribute, which is not validated.
+        $integration->credentials = new StripeCredentials(api_key: 'sk_test_abc', webhook_secret: '');
+
+        $payload = (string) json_encode(['id' => 'evt_123', 'type' => 'payment_intent.succeeded']);
+        $request = $this->signedWebhookRequest($payload, '', time());
+
+        $this->assertFalse((new StripeProvider)->verifyWebhookSignature($integration, $request));
+    }
+
     public function test_webhook_signature_verifies_a_correctly_signed_payload(): void
     {
         $secret = 'whsec_test_secret';
@@ -236,12 +272,7 @@ class StripeProviderTest extends TestCase
         );
 
         $payload = (string) json_encode(['id' => 'evt_123', 'type' => 'payment_intent.succeeded']);
-        $timestamp = (string) time();
-        $signature = hash_hmac('sha256', "{$timestamp}.{$payload}", $secret);
-        $header = "t={$timestamp},v1={$signature}";
-
-        $request = Request::create('/webhook', 'POST', content: $payload);
-        $request->headers->set('Stripe-Signature', $header);
+        $request = $this->signedWebhookRequest($payload, $secret, time());
 
         $this->assertTrue((new StripeProvider)->verifyWebhookSignature($integration, $request));
     }
@@ -259,14 +290,66 @@ class StripeProviderTest extends TestCase
         );
 
         $payload = (string) json_encode(['id' => 'evt_123', 'type' => 'payment_intent.succeeded']);
-        $timestamp = (string) time();
-        $signature = hash_hmac('sha256', "{$timestamp}.{$payload}", 'wrong-secret');
-        $header = "t={$timestamp},v1={$signature}";
-
-        $request = Request::create('/webhook', 'POST', content: $payload);
-        $request->headers->set('Stripe-Signature', $header);
+        $request = $this->signedWebhookRequest($payload, 'wrong-secret', time());
 
         $this->assertFalse((new StripeProvider)->verifyWebhookSignature($integration, $request));
+    }
+
+    public function test_webhook_signature_rejects_a_timestamp_outside_the_tolerance(): void
+    {
+        $secret = 'whsec_test_secret';
+        $integration = $this->createIntegration(
+            providerKey: 'stripe',
+            providerClass: StripeProvider::class,
+            credentials: [
+                'api_key' => 'sk_test_abc',
+                'webhook_secret' => $secret,
+            ],
+        );
+
+        $payload = (string) json_encode(['id' => 'evt_123', 'type' => 'payment_intent.succeeded']);
+        $request = $this->signedWebhookRequest($payload, $secret, time() - 600);
+
+        $this->assertFalse((new StripeProvider)->verifyWebhookSignature($integration, $request));
+    }
+
+    public function test_webhook_signature_accepts_a_signed_body_that_is_not_json(): void
+    {
+        $secret = 'whsec_test_secret';
+        $integration = $this->createIntegration(
+            providerKey: 'stripe',
+            providerClass: StripeProvider::class,
+            credentials: [
+                'api_key' => 'sk_test_abc',
+                'webhook_secret' => $secret,
+            ],
+        );
+
+        $request = $this->signedWebhookRequest('not-json', $secret, time());
+
+        $this->assertTrue((new StripeProvider)->verifyWebhookSignature($integration, $request));
+    }
+
+    public function test_webhook_signature_accepts_a_signed_thin_event(): void
+    {
+        $secret = 'whsec_test_secret';
+        $integration = $this->createIntegration(
+            providerKey: 'stripe',
+            providerClass: StripeProvider::class,
+            credentials: [
+                'api_key' => 'sk_test_abc',
+                'webhook_secret' => $secret,
+            ],
+        );
+
+        $payload = (string) json_encode([
+            'id' => 'evt_test_thin',
+            'object' => 'v2.core.event',
+            'type' => 'v1.billing.meter.error_report_triggered',
+        ]);
+        $request = $this->signedWebhookRequest($payload, $secret, time());
+
+        $this->assertTrue((new StripeProvider)->verifyWebhookSignature($integration, $request));
     }
 
     public function test_handle_webhook_dispatches_stripe_webhook_received_event(): void
@@ -302,7 +385,48 @@ class StripeProviderTest extends TestCase
         });
     }
 
-    public function test_handle_webhook_tolerates_missing_fields(): void
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function payloadsWithoutTypeOrId(): array
+    {
+        return [
+            'an empty object' => ['{}', 'unknown'],
+            'no type' => [(string) json_encode(['id' => 'evt_123']), 'unknown'],
+            'no id' => [(string) json_encode(['type' => 'payment_intent.succeeded']), 'payment_intent.succeeded'],
+            'an empty type' => [(string) json_encode(['id' => 'evt_123', 'type' => '']), 'unknown'],
+            'an empty id' => [(string) json_encode(['id' => '', 'type' => 'payment_intent.succeeded']), 'payment_intent.succeeded'],
+            'a body that is not JSON' => ['not-json', 'unknown'],
+        ];
+    }
+
+    #[DataProvider('payloadsWithoutTypeOrId')]
+    public function test_handle_webhook_ignores_a_payload_without_type_or_id(string $content, string $event): void
+    {
+        Event::fake();
+        Log::spy();
+
+        $integration = $this->createIntegration(
+            providerKey: 'stripe',
+            providerClass: StripeProvider::class,
+            credentials: [
+                'api_key' => 'sk_test_abc',
+                'webhook_secret' => 'whsec_zzz',
+            ],
+        );
+
+        $request = Request::create('/webhook', 'POST', content: $content);
+
+        $result = (new StripeProvider)->handleWebhook($integration, $request);
+
+        $this->assertSame(['status' => 'ignored', 'event' => $event], $result);
+        Event::assertNotDispatched(StripeWebhookReceived::class);
+        Log::shouldHaveReceived('warning')->once()->withArgs(
+            fn (string $message, array $context): bool => $context['integration_id'] === $integration->id,
+        );
+    }
+
+    public function test_handle_webhook_dispatches_an_event_whose_type_is_unknown(): void
     {
         Event::fake();
 
@@ -315,15 +439,12 @@ class StripeProviderTest extends TestCase
             ],
         );
 
-        $request = Request::create('/webhook', 'POST', content: '{}');
+        $request = Request::create('/webhook', 'POST', content: (string) json_encode(['id' => 'evt_123', 'type' => 'unknown']));
 
         $result = (new StripeProvider)->handleWebhook($integration, $request);
 
         $this->assertSame(['status' => 'dispatched', 'event' => 'unknown'], $result);
-
-        Event::assertDispatched(StripeWebhookReceived::class, function (StripeWebhookReceived $event): bool {
-            return $event->eventType === 'unknown' && $event->eventId === '';
-        });
+        Event::assertDispatched(StripeWebhookReceived::class);
     }
 
     public function test_health_check_returns_false_without_credentials(): void
@@ -331,6 +452,16 @@ class StripeProviderTest extends TestCase
         $integration = Integration::create(['provider' => 'stripe', 'name' => 'Stripe']);
 
         $this->assertFalse((new StripeProvider)->healthCheck($integration));
+    }
+
+    private function signedWebhookRequest(string $payload, string $secret, int $timestamp): Request
+    {
+        $signature = hash_hmac('sha256', "{$timestamp}.{$payload}", $secret);
+
+        $request = Request::create('/webhook', 'POST', content: $payload);
+        $request->headers->set('Stripe-Signature', "t={$timestamp},v1={$signature}");
+
+        return $request;
     }
 }
 

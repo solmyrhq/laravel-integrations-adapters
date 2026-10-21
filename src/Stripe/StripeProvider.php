@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\Stripe\Events\StripeWebhookReceived;
 use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\DeclaresRateLimit;
@@ -23,6 +24,7 @@ use Stripe\Exception\ApiConnectionException;
 use Stripe\Exception\ApiErrorException;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Webhook;
+use Stripe\WebhookSignature;
 use Throwable;
 
 use function Safe\json_decode;
@@ -114,8 +116,19 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     {
         $payload = $this->decodePayload($request);
 
-        $type = is_string($payload['type'] ?? null) ? $payload['type'] : 'unknown';
-        $id = is_string($payload['id'] ?? null) ? $payload['id'] : '';
+        $type = self::nonEmptyString($payload, 'type');
+        $id = self::nonEmptyString($payload, 'id');
+
+        // Every Stripe event, thin or snapshot, has a type and an id.
+        if ($type === null || $id === null) {
+            Log::warning('StripeProvider: signed delivery has no type or no id, so no event was dispatched.', [
+                'integration_id' => $integration->id,
+                'type' => $type,
+                'has_id' => $id !== null,
+            ]);
+
+            return ['status' => 'ignored', 'event' => $type ?? 'unknown'];
+        }
 
         StripeWebhookReceived::dispatch($integration, $type, $id, $payload);
 
@@ -136,10 +149,11 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
         }
 
         try {
-            Webhook::constructEvent(
+            WebhookSignature::verifyHeader(
                 $request->getContent(),
                 $signature,
                 $credentials->webhook_secret,
+                Webhook::DEFAULT_TOLERANCE,
             );
 
             return true;
@@ -151,11 +165,7 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     #[\Override]
     public function resolveWebhookEvent(Request $request): ?string
     {
-        $payload = $this->decodePayload($request);
-
-        $type = $payload['type'] ?? null;
-
-        return is_string($type) ? $type : null;
+        return self::nonEmptyString($this->decodePayload($request), 'type');
     }
 
     /**
@@ -173,11 +183,7 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     #[\Override]
     public function webhookDeliveryId(Request $request): ?string
     {
-        $payload = $this->decodePayload($request);
-
-        $id = $payload['id'] ?? null;
-
-        return is_string($id) ? $id : null;
+        return self::nonEmptyString($this->decodePayload($request), 'id');
     }
 
     #[\Override]
@@ -236,6 +242,16 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     protected function makeClient(Integration $integration): StripeClient
     {
         return new StripeClient($integration);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function nonEmptyString(array $payload, string $key): ?string
+    {
+        $value = $payload[$key] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**
