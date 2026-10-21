@@ -188,6 +188,20 @@ class StripeProviderTest extends TestCase
         $this->assertNull((new StripeProvider)->resolveWebhookEvent($request));
     }
 
+    public function test_resolve_webhook_event_returns_null_for_an_empty_type(): void
+    {
+        $request = Request::create('/webhook', 'POST', content: (string) json_encode(['id' => 'evt_123', 'type' => '']));
+
+        $this->assertNull((new StripeProvider)->resolveWebhookEvent($request));
+    }
+
+    public function test_webhook_delivery_id_returns_null_for_an_empty_id(): void
+    {
+        $request = Request::create('/webhook', 'POST', content: (string) json_encode(['id' => '', 'type' => 'x']));
+
+        $this->assertNull((new StripeProvider)->webhookDeliveryId($request));
+    }
+
     public function test_webhook_delivery_id_reads_id_from_payload(): void
     {
         $request = Request::create('/webhook', 'POST', content: (string) json_encode([

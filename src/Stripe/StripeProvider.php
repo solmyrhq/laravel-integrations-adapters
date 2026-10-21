@@ -116,8 +116,8 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     {
         $payload = $this->decodePayload($request);
 
-        $type = is_string($payload['type'] ?? null) && $payload['type'] !== '' ? $payload['type'] : null;
-        $id = is_string($payload['id'] ?? null) && $payload['id'] !== '' ? $payload['id'] : null;
+        $type = self::nonEmptyString($payload, 'type');
+        $id = self::nonEmptyString($payload, 'id');
 
         // Every Stripe event, thin or snapshot, has a type and an id.
         if ($type === null || $id === null) {
@@ -173,11 +173,7 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     #[\Override]
     public function resolveWebhookEvent(Request $request): ?string
     {
-        $payload = $this->decodePayload($request);
-
-        $type = $payload['type'] ?? null;
-
-        return is_string($type) ? $type : null;
+        return self::nonEmptyString($this->decodePayload($request), 'type');
     }
 
     /**
@@ -195,11 +191,7 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     #[\Override]
     public function webhookDeliveryId(Request $request): ?string
     {
-        $payload = $this->decodePayload($request);
-
-        $id = $payload['id'] ?? null;
-
-        return is_string($id) ? $id : null;
+        return self::nonEmptyString($this->decodePayload($request), 'id');
     }
 
     #[\Override]
@@ -258,6 +250,16 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     protected function makeClient(Integration $integration): StripeClient
     {
         return new StripeClient($integration);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private static function nonEmptyString(array $payload, string $key): ?string
+    {
+        $value = $payload[$key] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     /**
