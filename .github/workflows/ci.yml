@@ -85,8 +85,8 @@ jobs:
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ${{ steps.composer-cache-dir.outputs.cache-dir }}
-          key: ${{ runner.os }}-composer-${{ hashFiles('composer.json') }}
-          restore-keys: ${{ runner.os }}-composer-
+          key: ${{ runner.os }}-composer-${{ matrix.dependencies }}-${{ hashFiles('composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-${{ matrix.dependencies }}-
       - if: matrix.dependencies == 'highest'
         run: composer install --no-interaction --prefer-dist
       - if: matrix.dependencies == 'lowest'

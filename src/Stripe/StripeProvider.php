@@ -118,6 +118,11 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
         $type = is_string($payload['type'] ?? null) ? $payload['type'] : 'unknown';
         $id = is_string($payload['id'] ?? null) ? $payload['id'] : '';
 
+        // Every Stripe event, thin or snapshot, has a type and an id.
+        if ($type === 'unknown' || $id === '') {
+            return ['status' => 'ignored', 'event' => $type];
+        }
+
         StripeWebhookReceived::dispatch($integration, $type, $id, $payload);
 
         return ['status' => 'dispatched', 'event' => $type];
@@ -131,8 +136,10 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
             return false;
         }
 
-        // stripe-php before 21.3.2 does not reject an empty secret, and
-        // composer.json still allows those versions.
+        // The credential cast validates credentials read from the database,
+        // but not a Data object assigned to the attribute. stripe-php before
+        // 21.3.2, which the constraint in composer.json includes, accepts a
+        // signature made with an empty key.
         if ($credentials->webhook_secret === '') {
             return false;
         }

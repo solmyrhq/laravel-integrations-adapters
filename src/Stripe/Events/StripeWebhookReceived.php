@@ -14,6 +14,11 @@ use Integrations\Models\Integration;
  * exactly what Stripe sent; typed access is available via the matching
  * resource's Data class (e.g. StripePaymentIntentData::from($payload['data']['object'])).
  *
+ * A thin event (`object: v2.core.event`, with an `$eventType` such as
+ * `v1.billing.meter.error_report_triggered`) has no `data.object`. Fetch the
+ * related object from the API instead. StripeProvider dispatches this event
+ * only for a delivery that has both a type and an id.
+ *
  * Kept deliberately Stripe-agnostic at the event boundary: a future
  * cashier-gingerbread backend can emit the same event shape without
  * importing \Stripe\Event into consumer code.
