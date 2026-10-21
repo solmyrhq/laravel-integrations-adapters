@@ -143,14 +143,6 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
             return false;
         }
 
-        // The credential cast validates credentials read from the database,
-        // but not a Data object assigned to the attribute. stripe-php before
-        // 21.3.2, which the constraint in composer.json includes, accepts a
-        // signature made with an empty key.
-        if ($credentials->webhook_secret === '') {
-            return false;
-        }
-
         $signature = $request->header('Stripe-Signature');
         if (! is_string($signature) || $signature === '') {
             return false;
