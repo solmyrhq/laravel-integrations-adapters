@@ -29,8 +29,8 @@ jobs:
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ${{ steps.composer-cache-dir.outputs.cache-dir }}
-          key: ${{ runner.os }}-composer-${{ hashFiles('composer.json') }}
-          restore-keys: ${{ runner.os }}-composer-
+          key: ${{ runner.os }}-composer-highest-${{ hashFiles('composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-highest-
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/pint --test
 
@@ -54,8 +54,8 @@ jobs:
       - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ${{ steps.composer-cache-dir.outputs.cache-dir }}
-          key: ${{ runner.os }}-composer-${{ hashFiles('composer.json') }}
-          restore-keys: ${{ runner.os }}-composer-
+          key: ${{ runner.os }}-composer-highest-${{ hashFiles('composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-highest-
       - run: composer install --no-interaction --prefer-dist
       - run: vendor/bin/phpstan analyse --memory-limit=1G
 

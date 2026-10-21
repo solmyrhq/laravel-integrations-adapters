@@ -11,8 +11,8 @@ use Integrations\Models\Integration;
  * Emitted by StripeProvider::handleWebhook after signature verification.
  * Consumers listen for this event and route by `$eventType` to whatever
  * Action owns the downstream side-effects. The raw `$payload` array is
- * exactly what Stripe sent; typed access is available via the matching
- * resource's Data class (e.g. StripePaymentIntentData::from($payload['data']['object'])).
+ * exactly what Stripe sent. For typed access, build the matching stripe-php
+ * object from it, e.g. \Stripe\PaymentIntent::constructFrom($payload['data']['object']).
  *
  * A thin event (`object: v2.core.event`, with an `$eventType` such as
  * `v1.billing.meter.error_report_triggered`) has no `data.object`. Fetch the

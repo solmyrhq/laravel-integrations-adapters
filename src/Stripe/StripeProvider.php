@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Adapters\Stripe;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\Stripe\Events\StripeWebhookReceived;
 use Integrations\Contracts\ClassifiesFailures;
 use Integrations\Contracts\DeclaresRateLimit;
@@ -115,12 +116,18 @@ class StripeProvider implements ClassifiesFailures, DeclaresRateLimit, HandlesWe
     {
         $payload = $this->decodePayload($request);
 
-        $type = is_string($payload['type'] ?? null) ? $payload['type'] : 'unknown';
-        $id = is_string($payload['id'] ?? null) ? $payload['id'] : '';
+        $type = is_string($payload['type'] ?? null) && $payload['type'] !== '' ? $payload['type'] : null;
+        $id = is_string($payload['id'] ?? null) && $payload['id'] !== '' ? $payload['id'] : null;
 
         // Every Stripe event, thin or snapshot, has a type and an id.
-        if ($type === 'unknown' || $id === '') {
-            return ['status' => 'ignored', 'event' => $type];
+        if ($type === null || $id === null) {
+            Log::warning('StripeProvider: signed delivery has no type or no id, so no event was dispatched.', [
+                'integration_id' => $integration->id,
+                'type' => $type,
+                'has_id' => $id !== null,
+            ]);
+
+            return ['status' => 'ignored', 'event' => $type ?? 'unknown'];
         }
 
         StripeWebhookReceived::dispatch($integration, $type, $id, $payload);

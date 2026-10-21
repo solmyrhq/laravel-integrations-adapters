@@ -6,6 +6,7 @@ namespace Integrations\Adapters\Tests\Unit\Stripe;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Integrations\Adapters\Stripe\Events\StripeWebhookReceived;
 use Integrations\Adapters\Stripe\StripeCredentials;
 use Integrations\Adapters\Stripe\StripeMetadata;
@@ -379,6 +380,8 @@ class StripeProviderTest extends TestCase
             'an empty object' => ['{}', 'unknown'],
             'no type' => [(string) json_encode(['id' => 'evt_123']), 'unknown'],
             'no id' => [(string) json_encode(['type' => 'payment_intent.succeeded']), 'payment_intent.succeeded'],
+            'an empty type' => [(string) json_encode(['id' => 'evt_123', 'type' => '']), 'unknown'],
+            'an empty id' => [(string) json_encode(['id' => '', 'type' => 'payment_intent.succeeded']), 'payment_intent.succeeded'],
             'a body that is not JSON' => ['not-json', 'unknown'],
         ];
     }
@@ -387,6 +390,7 @@ class StripeProviderTest extends TestCase
     public function test_handle_webhook_ignores_a_payload_without_type_or_id(string $content, string $event): void
     {
         Event::fake();
+        Log::spy();
 
         $integration = $this->createIntegration(
             providerKey: 'stripe',
@@ -403,6 +407,30 @@ class StripeProviderTest extends TestCase
 
         $this->assertSame(['status' => 'ignored', 'event' => $event], $result);
         Event::assertNotDispatched(StripeWebhookReceived::class);
+        Log::shouldHaveReceived('warning')->once()->withArgs(
+            fn (string $message, array $context): bool => $context['integration_id'] === $integration->id,
+        );
+    }
+
+    public function test_handle_webhook_dispatches_an_event_whose_type_is_unknown(): void
+    {
+        Event::fake();
+
+        $integration = $this->createIntegration(
+            providerKey: 'stripe',
+            providerClass: StripeProvider::class,
+            credentials: [
+                'api_key' => 'sk_test_abc',
+                'webhook_secret' => 'whsec_zzz',
+            ],
+        );
+
+        $request = Request::create('/webhook', 'POST', content: (string) json_encode(['id' => 'evt_123', 'type' => 'unknown']));
+
+        $result = (new StripeProvider)->handleWebhook($integration, $request);
+
+        $this->assertSame(['status' => 'dispatched', 'event' => 'unknown'], $result);
+        Event::assertDispatched(StripeWebhookReceived::class);
     }
 
     public function test_health_check_returns_false_without_credentials(): void
