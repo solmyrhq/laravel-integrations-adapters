@@ -18,10 +18,6 @@ use Integrations\Models\Integration;
  * `v1.billing.meter.error_report_triggered`) has no `data.object`. When it
  * concerns an object, `$payload['related_object']` has that object's `id`,
  * `type` and `url`.
- *
- * Kept deliberately Stripe-agnostic at the event boundary: a future
- * cashier-gingerbread backend can emit the same event shape without
- * importing \Stripe\Event into consumer code.
  */
 final class StripeWebhookReceived
 {
