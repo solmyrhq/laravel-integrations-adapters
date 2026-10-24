@@ -16,8 +16,8 @@ jobs:
         # Only pull requests from a branch in this repository are reviewed, and only someone with write access can
         # push such a branch. GitHub withholds secrets from a pull request opened from a fork, so claude-code-action
         # would fail on one without CLAUDE_CODE_OAUTH_TOKEN. author_association isn't checked: in the pull_request
-        # event, GitHub reported the same organization member as CONTRIBUTOR in solmyrhq/actions and MEMBER in
-        # solmyrhq/gingerbread, so that member's pull requests went unreviewed in solmyrhq/actions.
+        # event, GitHub has reported the same organization member as CONTRIBUTOR in one repository and as MEMBER in
+        # another. With a check on it, the review would be skipped on some members' pull requests.
         if: github.event.pull_request.head.repo.full_name == github.repository
         runs-on: ubuntu-latest
         # claude-code-action posts the review with its Claude GitHub App token, which it gets through an OIDC
