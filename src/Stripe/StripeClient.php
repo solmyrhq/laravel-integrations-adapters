@@ -10,7 +10,9 @@ use Integrations\Adapters\Stripe\Resources\StripeCustomers;
 use Integrations\Adapters\Stripe\Resources\StripeDisputes;
 use Integrations\Adapters\Stripe\Resources\StripeEvents;
 use Integrations\Adapters\Stripe\Resources\StripePaymentIntents;
+use Integrations\Adapters\Stripe\Resources\StripePaymentMethods;
 use Integrations\Adapters\Stripe\Resources\StripeRefunds;
+use Integrations\Adapters\Stripe\Resources\StripeSetupIntents;
 use Integrations\Adapters\Stripe\Resources\StripeWebhookEndpoints;
 use Integrations\Models\Integration;
 use RuntimeException;
@@ -45,6 +47,10 @@ class StripeClient
     private ?StripeWebhookEndpoints $webhookEndpoints = null;
 
     private ?StripeAccount $account = null;
+
+    private ?StripeSetupIntents $setupIntents = null;
+
+    private ?StripePaymentMethods $paymentMethods = null;
 
     public function __construct(
         private readonly Integration $integration,
@@ -91,6 +97,16 @@ class StripeClient
     public function account(): StripeAccount
     {
         return $this->account ??= new StripeAccount($this->integration, $this);
+    }
+
+    public function setupIntents(): StripeSetupIntents
+    {
+        return $this->setupIntents ??= new StripeSetupIntents($this->integration, $this);
+    }
+
+    public function paymentMethods(): StripePaymentMethods
+    {
+        return $this->paymentMethods ??= new StripePaymentMethods($this->integration, $this);
     }
 
     public function getSdkClient(): StripeSdkClient
