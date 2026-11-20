@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Integrations\Adapters\Stripe\Resources;
 
+use Integrations\Adapters\Stripe\Enums\StripeSetupFutureUsage;
 use Integrations\Adapters\Stripe\StripeResource;
 use Integrations\Exceptions\IdempotencyConflict;
 use Integrations\RequestContext;
+use InvalidArgumentException;
 use Stripe\Collection;
 use Stripe\PaymentIntent;
 
@@ -28,7 +30,19 @@ class StripePaymentIntents extends StripeResource
      * `Idempotency-Key` header so Stripe also dedupes upstream. Pass
      * `null` (the default) to skip idempotency entirely.
      *
+     * To charge a saved method when the customer is not present, for example
+     * for a renewal, pass `$customer`, `$paymentMethod`, `confirm: true` and
+     * `offSession: true`. If the bank declines the charge, the SDK throws
+     * Stripe's `CardException`. Its `getError()->payment_intent` holds the
+     * PaymentIntent, and its `getDeclineCode()` returns a code such as
+     * `authentication_required`.
+     *
+     * To limit the method types, pass `$allowedPaymentMethodTypes` with
+     * `automaticPaymentMethods: false`. A list with
+     * `automaticPaymentMethods: true` throws `InvalidArgumentException`.
+     *
      * @param  array<string, string>|null  $metadata
+     * @param  list<string>|null  $allowedPaymentMethodTypes
      */
     public function create(
         int $amount,
@@ -39,27 +53,41 @@ class StripePaymentIntents extends StripeResource
         ?array $metadata = null,
         bool $automaticPaymentMethods = true,
         ?string $idempotencyKey = null,
+        ?string $paymentMethod = null,
+        ?array $allowedPaymentMethodTypes = null,
+        ?StripeSetupFutureUsage $setupFutureUsage = null,
+        bool $confirm = false,
+        bool $offSession = false,
+        ?string $returnUrl = null,
     ): PaymentIntent {
         $this->assertPositive($amount, 'amount');
+        $this->assertConfirmation($confirm, $offSession, $returnUrl, $paymentMethod);
 
-        $params = [
-            'amount' => $amount,
-            'currency' => $currency,
-            'automatic_payment_methods' => ['enabled' => $automaticPaymentMethods],
-        ];
-
-        if ($customer !== null) {
-            $this->assertId($customer);
-            $params['customer'] = $customer;
+        $params = $this->createParams(
+            $amount,
+            $currency,
+            $customer,
+            $receiptEmail,
+            $description,
+            $metadata,
+            $automaticPaymentMethods,
+            $allowedPaymentMethodTypes,
+        );
+        if ($paymentMethod !== null) {
+            $this->assertId($paymentMethod);
+            $params['payment_method'] = $paymentMethod;
         }
-        if ($receiptEmail !== null) {
-            $params['receipt_email'] = $receiptEmail;
+        if ($setupFutureUsage !== null) {
+            $params['setup_future_usage'] = $setupFutureUsage->value;
         }
-        if ($description !== null) {
-            $params['description'] = $description;
+        if ($confirm) {
+            $params['confirm'] = true;
         }
-        if ($metadata !== null) {
-            $params['metadata'] = $metadata;
+        if ($offSession) {
+            $params['off_session'] = true;
+        }
+        if ($returnUrl !== null) {
+            $params['return_url'] = $returnUrl;
         }
 
         $response = $this->integration
@@ -130,14 +158,34 @@ class StripePaymentIntents extends StripeResource
         return $this->expectInstance($response, PaymentIntent::class);
     }
 
-    public function confirm(string $id, ?string $paymentMethod = null, ?string $idempotencyKey = null): PaymentIntent
-    {
+    /**
+     * Pass `offSession: true` to retry a saved method when the customer is not
+     * present. If the bank declines the charge, the SDK throws Stripe's
+     * `CardException`, as in `create()`.
+     */
+    public function confirm(
+        string $id,
+        ?string $paymentMethod = null,
+        ?string $idempotencyKey = null,
+        bool $offSession = false,
+        ?string $returnUrl = null,
+        ?StripeSetupFutureUsage $setupFutureUsage = null,
+    ): PaymentIntent {
         $this->assertId($id);
 
         $params = [];
         if ($paymentMethod !== null) {
             $this->assertId($paymentMethod);
             $params['payment_method'] = $paymentMethod;
+        }
+        if ($offSession) {
+            $params['off_session'] = true;
+        }
+        if ($returnUrl !== null) {
+            $params['return_url'] = $returnUrl;
+        }
+        if ($setupFutureUsage !== null) {
+            $params['setup_future_usage'] = $setupFutureUsage->value;
         }
 
         $response = $this->integration
@@ -231,5 +279,50 @@ class StripePaymentIntents extends StripeResource
             ));
 
         return $this->expectInstance($response, Collection::class);
+    }
+
+    private function assertConfirmation(bool $confirm, bool $offSession, ?string $returnUrl, ?string $paymentMethod): void
+    {
+        if (! $confirm && ($offSession || $returnUrl !== null)) {
+            throw new InvalidArgumentException('Pass confirm: true to send Stripe off_session or return_url.');
+        }
+
+        if ($confirm && $paymentMethod === null) {
+            throw new InvalidArgumentException('Pass a paymentMethod with Stripe PaymentIntent confirm: true.');
+        }
+    }
+
+    /**
+     * @param  array<string, string>|null  $metadata
+     * @param  list<string>|null  $allowedPaymentMethodTypes
+     * @return array{amount: int, currency: string, automatic_payment_methods?: array{enabled: bool}, allowed_payment_method_types?: list<string>, customer?: string, receipt_email?: string, description?: string, metadata?: array<string, string>}
+     */
+    private function createParams(
+        int $amount,
+        string $currency,
+        ?string $customer,
+        ?string $receiptEmail,
+        ?string $description,
+        ?array $metadata,
+        bool $automaticPaymentMethods,
+        ?array $allowedPaymentMethodTypes,
+    ): array {
+        $params = ['amount' => $amount, 'currency' => $currency, ...$this->methodSelection($automaticPaymentMethods, $allowedPaymentMethodTypes)];
+
+        if ($customer !== null) {
+            $this->assertId($customer);
+            $params['customer'] = $customer;
+        }
+        if ($receiptEmail !== null) {
+            $params['receipt_email'] = $receiptEmail;
+        }
+        if ($description !== null) {
+            $params['description'] = $description;
+        }
+        if ($metadata !== null) {
+            $params['metadata'] = $metadata;
+        }
+
+        return $params;
     }
 }

@@ -36,6 +36,31 @@ abstract class StripeResource
         }
     }
 
+    /**
+     * Returns an intent's `automatic_payment_methods` or
+     * `allowed_payment_method_types` param, never both: Stripe rejects an
+     * intent that sets both.
+     *
+     * @param  list<string>|null  $allowedPaymentMethodTypes
+     * @return array{automatic_payment_methods: array{enabled: bool}}|array{allowed_payment_method_types: list<string>}
+     */
+    protected function methodSelection(bool $automaticPaymentMethods, ?array $allowedPaymentMethodTypes): array
+    {
+        if ($allowedPaymentMethodTypes === null) {
+            return ['automatic_payment_methods' => ['enabled' => $automaticPaymentMethods]];
+        }
+
+        if ($automaticPaymentMethods) {
+            throw new InvalidArgumentException('Pass automaticPaymentMethods: false with allowedPaymentMethodTypes.');
+        }
+
+        if ($allowedPaymentMethodTypes === []) {
+            throw new InvalidArgumentException('Stripe allowedPaymentMethodTypes cannot be empty.');
+        }
+
+        return ['allowed_payment_method_types' => $allowedPaymentMethodTypes];
+    }
+
     protected function assertPositive(int $value, string $parameter): void
     {
         if ($value <= 0) {

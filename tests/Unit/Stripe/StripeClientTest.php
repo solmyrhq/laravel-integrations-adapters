@@ -9,7 +9,9 @@ use Integrations\Adapters\Stripe\Resources\StripeCustomers;
 use Integrations\Adapters\Stripe\Resources\StripeDisputes;
 use Integrations\Adapters\Stripe\Resources\StripeEvents;
 use Integrations\Adapters\Stripe\Resources\StripePaymentIntents;
+use Integrations\Adapters\Stripe\Resources\StripePaymentMethods;
 use Integrations\Adapters\Stripe\Resources\StripeRefunds;
+use Integrations\Adapters\Stripe\Resources\StripeSetupIntents;
 use Integrations\Adapters\Stripe\Resources\StripeWebhookEndpoints;
 use Integrations\Adapters\Stripe\StripeClient;
 use Integrations\Adapters\Stripe\StripeProvider;
@@ -70,6 +72,16 @@ class StripeClientTest extends TestCase
     public function test_exposes_webhook_endpoints_resource(): void
     {
         $this->assertInstanceOf(StripeWebhookEndpoints::class, $this->createClient()->webhookEndpoints());
+    }
+
+    public function test_exposes_setup_intents_resource(): void
+    {
+        $this->assertInstanceOf(StripeSetupIntents::class, $this->createClient()->setupIntents());
+    }
+
+    public function test_exposes_payment_methods_resource(): void
+    {
+        $this->assertInstanceOf(StripePaymentMethods::class, $this->createClient()->paymentMethods());
     }
 
     public function test_resource_accessors_memoize_their_instance(): void
