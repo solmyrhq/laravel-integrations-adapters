@@ -47,8 +47,7 @@ class GitHubAssets extends GitHubResource
 
     private static function isGitHubDomain(string $url): bool
     {
-        $host = parse_url($url)['host'] ?? '';
-        $domain = is_string($host) ? $host : '';
+        $domain = parse_url($url)['host'] ?? '';
 
         return $domain === 'github.com'
             || str_ends_with($domain, '.github.com')

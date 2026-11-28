@@ -1,6 +1,7 @@
 name: Code Review
 
 on:
+    # zizmor: ignore[dangerous-triggers] Every review that review.yml calls runs only for pull requests from this repository's own branches.
     pull_request_target:
         types: [opened, synchronize, ready_for_review, reopened]
     workflow_dispatch:
@@ -13,13 +14,19 @@ permissions: {}
 
 jobs:
     review:
+        # zizmor: ignore[stale-action-refs] solmyrhq/actions has no release tags. The pin is a commit on its main branch.
         uses: solmyrhq/actions/.github/workflows/review.yml@834e083de65dcd5f2958dc619c008c63af70866f
         permissions:
-            actions: read
-            contents: write
-            id-token: write
-            pull-requests: write
+            actions: read # the Claude review
+            contents: write # the Codex and OpenCode reviews
+            id-token: write # the Claude review
+            pull-requests: write # the Codex and OpenCode reviews
         with:
             pr: ${{ inputs.pr }}
             guide: AGENTS.md
-        secrets: inherit
+        secrets:
+            CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+            OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+            CLIPROXY_API_KEY: ${{ secrets.CLIPROXY_API_KEY }}
+            CLIPROXY_BASE_URL: ${{ secrets.CLIPROXY_BASE_URL }}
+            CODE_REVIEW_TS_OAUTH_SECRET: ${{ secrets.CODE_REVIEW_TS_OAUTH_SECRET }}

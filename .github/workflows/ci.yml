@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     name: Pint (PHP ${{ matrix.php-version }})
@@ -16,17 +20,17 @@ jobs:
       matrix:
         php-version: ['8.3', '8.4', '8.5']
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php-version }}
           tools: composer
       - name: Get composer cache directory
         id: composer-cache-dir
         run: echo "cache-dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ steps.composer-cache-dir.outputs.cache-dir }}
           key: ${{ runner.os }}-composer-highest-${{ hashFiles('composer.json') }}
@@ -41,17 +45,17 @@ jobs:
       matrix:
         php-version: ['8.3', '8.4', '8.5']
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php-version }}
           tools: composer
       - name: Get composer cache directory
         id: composer-cache-dir
         run: echo "cache-dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ steps.composer-cache-dir.outputs.cache-dir }}
           key: ${{ runner.os }}-composer-highest-${{ hashFiles('composer.json') }}
@@ -71,10 +75,10 @@ jobs:
           - php-version: '8.3'
             dependencies: 'lowest'
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - uses: shivammathur/setup-php@accd6127cb78bee3e8082180cb391013d204ef9f # v2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php-version }}
           tools: composer
@@ -82,7 +86,7 @@ jobs:
       - name: Get composer cache directory
         id: composer-cache-dir
         run: echo "cache-dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: ${{ steps.composer-cache-dir.outputs.cache-dir }}
           key: ${{ runner.os }}-composer-${{ matrix.dependencies }}-${{ hashFiles('composer.json') }}
@@ -93,12 +97,18 @@ jobs:
         run: composer update --prefer-lowest --prefer-stable --no-interaction --prefer-dist
       - run: vendor/bin/phpunit
 
+  zizmor:
+    # zizmor: ignore[stale-action-refs] solmyrhq/actions has no release tags. The pin is a commit on its main branch.
+    uses: solmyrhq/actions/.github/workflows/zizmor.yml@cd7f53c8698f8f22c74d17d82c3f30558e2d9d6e
+    permissions:
+      contents: read
+
   # The only check that the default branch's ruleset requires, by this name,
   # so every other job must be in `needs`. The ruleset is in
   # solmyrhq/gingerbread, infra/terraform/github-rulesets.tf.
   ci-result:
     name: CI result
-    needs: [lint, analyse, test]
+    needs: [lint, analyse, test, zizmor]
     if: always()
     runs-on: ubuntu-latest
     steps:

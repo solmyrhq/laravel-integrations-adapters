@@ -638,6 +638,25 @@ class PostmarkProviderTest extends TestCase
         });
     }
 
+    public function test_handle_webhook_drops_the_integer_keys_of_a_json_list(): void
+    {
+        Event::fake();
+        $integration = $this->makeIntegration();
+
+        $request = Request::create('/webhook', 'POST', content: (string) json_encode([
+            ['RecordType' => 'Bounce', 'MessageID' => 'msg-1'],
+        ]));
+
+        $result = (new PostmarkProvider)->handleWebhook($integration, $request);
+
+        $this->assertSame(['status' => 'dispatched', 'event' => 'unknown'], $result);
+
+        Event::assertDispatched(PostmarkWebhookReceived::class, function (PostmarkWebhookReceived $e): bool {
+            return $e->recordType === 'unknown' && $e->payload === [];
+        });
+        Event::assertNotDispatched(PostmarkBounceReceived::class);
+    }
+
     public function test_health_check_returns_true_on_2xx_from_server_endpoint(): void
     {
         Http::preventStrayRequests();
