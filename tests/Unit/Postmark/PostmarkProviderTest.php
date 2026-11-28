@@ -250,6 +250,15 @@ class PostmarkProviderTest extends TestCase
         $this->assertNull((new PostmarkProvider)->resolveWebhookEvent($request));
     }
 
+    public function test_resolve_webhook_event_returns_null_for_a_json_list(): void
+    {
+        $request = Request::create('/webhook', 'POST', content: (string) json_encode([
+            ['RecordType' => 'Bounce', 'MessageID' => 'msg-1'],
+        ]));
+
+        $this->assertNull((new PostmarkProvider)->resolveWebhookEvent($request));
+    }
+
     public function test_webhook_signature_rejects_when_credentials_are_missing(): void
     {
         $integration = Integration::create(['provider' => 'postmark', 'name' => 'Postmark']);

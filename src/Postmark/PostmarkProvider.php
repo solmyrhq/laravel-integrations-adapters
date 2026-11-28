@@ -405,9 +405,6 @@ class PostmarkProvider implements ClassifiesFailures, HandlesWebhooks, HasHealth
      */
     private function decodePayload(Request $request): array
     {
-        // $request->json() handles malformed JSON by returning an empty
-        // InputBag and is already typed as array<string, mixed>, so no
-        // try/catch or key filtering needed here.
-        return $request->json()->all();
+        return array_filter($request->json()->all(), is_string(...), ARRAY_FILTER_USE_KEY);
     }
 }

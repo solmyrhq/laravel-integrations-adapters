@@ -31,9 +31,7 @@ class ZendeskIncrementalTicketResponse extends Data
             return null;
         }
 
-        $query = parse_url($this->next_page)['query'] ?? '';
-        $queryString = is_string($query) ? $query : '';
-        parse_str($queryString, $queryParams);
+        parse_str(parse_url($this->next_page)['query'] ?? '', $queryParams);
 
         return array_key_exists('start_time', $queryParams) && is_numeric($queryParams['start_time'])
             ? (int) $queryParams['start_time']
